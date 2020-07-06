@@ -42,6 +42,7 @@ Table of Content
       * `Django to Protobuf`_
       * `Protobuf to Django`_
 
+    * `Limit Foreign key or Many-to-Many field conversion depth`_
     * `Datetime Field`_
     * `Custom Fields`_
 
@@ -50,7 +51,7 @@ Table of Content
 Compatibility
 -------------
 
-Currently tested with metrics:
+Currently tested with matrix:
 
 +---------------+-----+-----+-----+-----+-----+
 | Django/Python | 2.7 | 3.5 | 3.6 | 3.7 | 3.8 |
@@ -168,7 +169,7 @@ Fields listed in ``pb_2_dj_fields`` can be overwritten using manual definition.
     class Account(ProtoBufMixin, models.Model):
         pb_model = account_pb2.Account
         pb_2_dj_fields = '__all__'
-        
+
         email = models.EmailField(max_length=64)
 
 
@@ -284,12 +285,10 @@ Django model would be:
 
        m2m = models.ManyToManyField(M2M)
 
-
 Django to Protobuf
 """"""""""""""""""
 
 If this is not the format you expected, overwrite ``_m2m_to_protobuf()`` of Django model by yourself.
-
 
 Protobuf to Django
 """"""""""""""""""
@@ -317,6 +316,63 @@ logics such as:
         ...
 
 Also, you should write your converting policy if m2m is not nested repeated message in ``_repeated_to_m2m`` method
+
+
+Limit Foreign key or Many-to-Many field conversion depth
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, when to_pb() method is called, all related message will be 
+also converted recursively. 
+
+For example:
+
+.. code:: protobuf
+
+  message DeeperRelation {
+    int32 id = 1;
+    int32 num = 2;
+  }
+
+  // Relation model for testing
+  message Relation {
+      int32 id = 1;
+      int32 num = 2;
+      DeeperRelation deeper_relation = 3;
+  }
+
+  message Main {
+    int32 id = 1;
+    Relation fk_field = 2;
+  }
+
+And code:
+
+.. code:: python
+
+  >>> m = Main.objects.create(fk=Relation.objects.create(
+        deeper_relation=DeeperRelation.objects.create()))
+  >>> m.to_pb()
+  fk {
+    id: 1
+    fk_field {
+      id: 1,
+      deeper_ralation {
+        id: 1
+      }
+    }
+  }
+
+
+This may not be the behavior wanted. The depth parameter can be used to limit 
+the depth of these conversion.
+
+If the depth is set to 0, no related field will be converted, the fk_field in 
+Main message will left unset. 
+
+If the depth is set to any positive number, the level of related field will be
+limited by the specified number. For example, if depth is set to 1, the fk_field
+will contain the related Relation message, however the deeper_relation field 
+of the fk_field message will be unset.
 
 Datetime Field
 ~~~~~~~~~~~~~~
